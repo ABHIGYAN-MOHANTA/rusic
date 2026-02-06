@@ -553,7 +553,7 @@
 
     <script type="module">
         // Initialize Rust WASM module
-        import init from './pkg/rusic.js';
+        import init, { render_frame, get_audio_info } from './pkg/rusic.js';
 
         const canvas = document.getElementById('canvas');
         const status = document.getElementById('status');
@@ -574,6 +574,58 @@
 
         let isPlaying = false;
 
+        // Web Audio API setup
+        let audioContext = null;
+        let analyser = null;
+        let sourceNode = null;
+        let frequencyData = null;
+        let timeData = null;
+        let animationId = null;
+        let wasmReady = false;
+
+        // Initialize audio context and analyser (must be called after user gesture)
+        function initAudioContext() {
+            if (audioContext) return; // Already initialized
+
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            analyser = audioContext.createAnalyser();
+            analyser.fftSize = 256; // 128 frequency bins
+            analyser.smoothingTimeConstant = 0.8;
+
+            // Connect audio element to analyser
+            sourceNode = audioContext.createMediaElementSource(audio);
+            sourceNode.connect(analyser);
+            analyser.connect(audioContext.destination);
+
+            // Create data arrays
+            frequencyData = new Uint8Array(analyser.frequencyBinCount); // 128 bins
+            timeData = new Uint8Array(analyser.frequencyBinCount); // 128 samples
+
+            console.log('🎧 Audio Context initialized | FFT size:', analyser.fftSize, '| Bins:', analyser.frequencyBinCount);
+            status.textContent = 'Audio Ready';
+        }
+
+        // Animation loop - sends audio data to Rust every frame
+        function animationLoop() {
+            if (!analyser || !wasmReady) {
+                animationId = requestAnimationFrame(animationLoop);
+                return;
+            }
+
+            // Get audio data
+            analyser.getByteFrequencyData(frequencyData);
+            analyser.getByteTimeDomainData(timeData);
+
+            // Call Rust render_frame with the audio data
+            try {
+                render_frame(frequencyData, timeData);
+            } catch (e) {
+                console.error('render_frame error:', e);
+            }
+
+            animationId = requestAnimationFrame(animationLoop);
+        }
+
         // Resize canvas to match container
         function resizeCanvas() {
             const container = canvas.parentElement;
@@ -587,9 +639,13 @@
 
         // Initialize WASM
         init().then(() => {
+            wasmReady = true;
             status.textContent = 'WebGL Ready (WASM)';
             status.classList.add('active');
-            console.log('Rusic WASM initialized successfully');
+            console.log('✅ Rusic WASM initialized successfully');
+
+            // Start animation loop
+            animationLoop();
         }).catch(err => {
             status.textContent = 'WASM Error';
             console.error('WASM init failed:', err);
@@ -618,6 +674,9 @@
 
         // Play/Pause
         playBtn.addEventListener('click', () => {
+            // Initialize audio context on first play (required for browser autoplay policy)
+            initAudioContext();
+
             if (isPlaying) {
                 audio.pause();
             } else {
