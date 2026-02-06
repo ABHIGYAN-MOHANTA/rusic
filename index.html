@@ -1,15 +1,631 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Rusic</title>
+    <title>Rusic — Music Visualizer</title>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap"
+        rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg: #08090d;
+            --surface: #0f1117;
+            --surface-2: #161922;
+            --border: rgba(255, 255, 255, 0.06);
+            --text: #e8eaed;
+            --text-muted: #7a8194;
+            --accent: #6366f1;
+            --accent-glow: rgba(99, 102, 241, 0.25);
+        }
+
+        html,
+        body {
+            height: 100%;
+            font-family: 'Space Grotesk', system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.5;
+        }
+
+        .app {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Header */
+        .header {
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            flex-shrink: 0;
+        }
+
+        .logo {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, var(--accent), #a855f7);
+            border-radius: 10px;
+            display: grid;
+            place-items: center;
+            font-weight: 700;
+            font-size: 1.1rem;
+        }
+
+        .brand h1 {
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
+
+        .brand p {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        /* Main Layout */
+        .main {
+            flex: 1;
+            display: grid;
+            grid-template-columns: 1fr 320px;
+            gap: 1.5rem;
+            padding: 1.5rem;
+            min-height: 0;
+        }
+
+        /* Canvas Section */
+        .visualizer {
+            background: var(--surface);
+            border-radius: 16px;
+            border: 1px solid var(--border);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            min-height: 400px;
+        }
+
+        .canvas-container {
+            flex: 1;
+            position: relative;
+            background: #000;
+        }
+
+        #canvas {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        .canvas-status {
+            position: absolute;
+            bottom: 1rem;
+            left: 1rem;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 0.4rem 0.75rem;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        .canvas-status.active {
+            color: #22c55e;
+        }
+
+        /* Controls Panel */
+        .controls {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .panel {
+            background: var(--surface);
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            padding: 1rem;
+        }
+
+        .panel-title {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--text-muted);
+            margin-bottom: 0.75rem;
+        }
+
+        /* Now Playing */
+        .now-playing {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 1rem;
+        }
+
+        .album-art {
+            width: 48px;
+            height: 48px;
+            background: linear-gradient(135deg, var(--surface-2), var(--accent));
+            border-radius: 8px;
+            display: grid;
+            place-items: center;
+            font-size: 1.25rem;
+            flex-shrink: 0;
+        }
+
+        .track-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .track-name {
+            font-weight: 500;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .track-artist {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+
+        /* Progress */
+        .progress-bar {
+            height: 4px;
+            background: var(--surface-2);
+            border-radius: 2px;
+            margin-bottom: 0.5rem;
+            cursor: pointer;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            width: 0%;
+            background: var(--accent);
+            border-radius: 2px;
+            transition: width 0.1s linear;
+        }
+
+        .time-row {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            font-variant-numeric: tabular-nums;
+        }
+
+        /* Playback Controls */
+        .playback-controls {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            margin-top: 1rem;
+        }
+
+        .btn {
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 0.6rem 1rem;
+            border-radius: 8px;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 0.85rem;
+            font-weight: 500;
+            transition: all 0.15s ease;
+        }
+
+        .btn:hover {
+            background: var(--surface);
+            border-color: var(--accent);
+        }
+
+        .btn-icon {
+            width: 40px;
+            height: 40px;
+            padding: 0;
+            display: grid;
+            place-items: center;
+            border-radius: 50%;
+        }
+
+        .btn-play {
+            width: 52px;
+            height: 52px;
+            background: var(--accent);
+            border-color: var(--accent);
+            box-shadow: 0 4px 20px var(--accent-glow);
+        }
+
+        .btn-play:hover {
+            background: #818cf8;
+            border-color: #818cf8;
+        }
+
+        /* Volume */
+        .volume-row {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-top: 1rem;
+        }
+
+        .volume-icon {
+            color: var(--text-muted);
+            font-size: 1rem;
+            cursor: pointer;
+        }
+
+        input[type="range"] {
+            flex: 1;
+            height: 4px;
+            -webkit-appearance: none;
+            appearance: none;
+            background: var(--surface-2);
+            border-radius: 2px;
+            cursor: pointer;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 14px;
+            height: 14px;
+            background: var(--accent);
+            border-radius: 50%;
+            cursor: pointer;
+        }
+
+        /* Upload */
+        .upload-zone {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 0.25rem;
+            border: 2px dashed var(--border);
+            border-radius: 10px;
+            padding: 1.5rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            min-height: 100px;
+        }
+
+        .upload-zone:hover,
+        .upload-zone.dragover {
+            border-color: var(--accent);
+            background: rgba(99, 102, 241, 0.05);
+        }
+
+        .upload-zone p {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+
+        .upload-zone .highlight {
+            color: var(--accent);
+            font-weight: 500;
+        }
+
+        #file-input {
+            display: none;
+        }
+
+        /* Responsive */
+        @media (max-width: 900px) {
+            .main {
+                grid-template-columns: 1fr;
+                grid-template-rows: minmax(300px, 1fr) auto;
+            }
+
+            .controls {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+                gap: 1rem;
+            }
+        }
+
+        @media (max-width: 600px) {
+            .header {
+                padding: 1rem;
+            }
+
+            .main {
+                padding: 1rem;
+                gap: 1rem;
+            }
+
+            .visualizer {
+                min-height: 280px;
+            }
+
+            .controls {
+                grid-template-columns: 1fr;
+            }
+
+            .playback-controls {
+                gap: 0.25rem;
+            }
+
+            .btn-icon {
+                width: 36px;
+                height: 36px;
+            }
+
+            .btn-play {
+                width: 48px;
+                height: 48px;
+            }
+        }
+
+        @media (max-width: 400px) {
+            .brand h1 {
+                font-size: 1.1rem;
+            }
+
+            .logo {
+                width: 36px;
+                height: 36px;
+            }
+
+            .panel {
+                padding: 0.875rem;
+            }
+        }
+    </style>
 </head>
+
 <body>
-    <canvas id="canvas" width="800" height="600"></canvas>
+    <div class="app">
+        <header class="header">
+            <div class="logo">R</div>
+            <div class="brand">
+                <h1>Rusic</h1>
+                <p>WebGL Music Visualizer • Rust + WASM</p>
+            </div>
+        </header>
+
+        <main class="main">
+            <section class="visualizer">
+                <div class="canvas-container">
+                    <canvas id="canvas"></canvas>
+                    <div class="canvas-status" id="status">Initializing WebGL...</div>
+                </div>
+            </section>
+
+            <aside class="controls">
+                <div class="panel">
+                    <div class="panel-title">Now Playing</div>
+                    <div class="now-playing">
+                        <div class="album-art">🎵</div>
+                        <div class="track-info">
+                            <div class="track-name" id="track-name">Default Track</div>
+                            <div class="track-artist" id="track-artist">Rusic Demo</div>
+                        </div>
+                    </div>
+
+                    <div class="progress-bar" id="progress-bar">
+                        <div class="progress-fill" id="progress-fill"></div>
+                    </div>
+                    <div class="time-row">
+                        <span id="current-time">0:00</span>
+                        <span id="duration">0:00</span>
+                    </div>
+
+                    <div class="playback-controls">
+                        <button class="btn btn-icon" id="prev-btn">⏮</button>
+                        <button class="btn btn-icon btn-play" id="play-btn">▶</button>
+                        <button class="btn btn-icon" id="next-btn">⏭</button>
+                    </div>
+
+                    <div class="volume-row">
+                        <span class="volume-icon" id="volume-icon">🔊</span>
+                        <input type="range" id="volume" min="0" max="1" step="0.01" value="0.8">
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-title">Upload Music</div>
+                    <label class="upload-zone" id="upload-zone">
+                        <p>Drop your <span class="highlight">MP3/WAV</span> here</p>
+                        <p>or click to browse</p>
+                        <input type="file" id="file-input" accept="audio/*">
+                    </label>
+                </div>
+            </aside>
+        </main>
+    </div>
+
+    <audio id="audio" crossorigin="anonymous"></audio>
+
     <script type="module">
-        import init from "./pkg/rusic.js";
-        init();
+        // Initialize Rust WASM module
+        import init from './pkg/rusic.js';
+
+        const canvas = document.getElementById('canvas');
+        const status = document.getElementById('status');
+        const audio = document.getElementById('audio');
+        const playBtn = document.getElementById('play-btn');
+        const prevBtn = document.getElementById('prev-btn');
+        const nextBtn = document.getElementById('next-btn');
+        const volumeSlider = document.getElementById('volume');
+        const volumeIcon = document.getElementById('volume-icon');
+        const progressBar = document.getElementById('progress-bar');
+        const progressFill = document.getElementById('progress-fill');
+        const currentTimeEl = document.getElementById('current-time');
+        const durationEl = document.getElementById('duration');
+        const trackName = document.getElementById('track-name');
+        const trackArtist = document.getElementById('track-artist');
+        const uploadZone = document.getElementById('upload-zone');
+        const fileInput = document.getElementById('file-input');
+
+        let isPlaying = false;
+
+        // Resize canvas to match container
+        function resizeCanvas() {
+            const container = canvas.parentElement;
+            const dpr = window.devicePixelRatio || 1;
+            canvas.width = container.clientWidth * dpr;
+            canvas.height = container.clientHeight * dpr;
+        }
+
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        // Initialize WASM
+        init().then(() => {
+            status.textContent = 'WebGL Ready (WASM)';
+            status.classList.add('active');
+            console.log('Rusic WASM initialized successfully');
+        }).catch(err => {
+            status.textContent = 'WASM Error';
+            console.error('WASM init failed:', err);
+        });
+
+        // Load default track
+        audio.src = './default.mp3';
+        audio.load();
+
+        // Format time
+        function formatTime(sec) {
+            if (isNaN(sec)) return '0:00';
+            const m = Math.floor(sec / 60);
+            const s = Math.floor(sec % 60);
+            return `${m}:${s.toString().padStart(2, '0')}`;
+        }
+
+        // Play/Pause
+        playBtn.addEventListener('click', () => {
+            if (isPlaying) {
+                audio.pause();
+            } else {
+                audio.play();
+            }
+        });
+
+        audio.addEventListener('play', () => {
+            isPlaying = true;
+            playBtn.textContent = '⏸';
+        });
+
+        audio.addEventListener('pause', () => {
+            isPlaying = false;
+            playBtn.textContent = '▶';
+        });
+
+        audio.addEventListener('ended', () => {
+            isPlaying = false;
+            playBtn.textContent = '▶';
+            progressFill.style.width = '0%';
+        });
+
+        // Progress
+        audio.addEventListener('loadedmetadata', () => {
+            durationEl.textContent = formatTime(audio.duration);
+        });
+
+        audio.addEventListener('timeupdate', () => {
+            const pct = (audio.currentTime / audio.duration) * 100;
+            progressFill.style.width = `${pct}%`;
+            currentTimeEl.textContent = formatTime(audio.currentTime);
+        });
+
+        progressBar.addEventListener('click', (e) => {
+            if (!audio.duration) return;
+            const rect = progressBar.getBoundingClientRect();
+            const pct = (e.clientX - rect.left) / rect.width;
+            audio.currentTime = pct * audio.duration;
+        });
+
+        // Volume
+        volumeSlider.addEventListener('input', () => {
+            audio.volume = volumeSlider.value;
+            updateVolumeIcon();
+        });
+
+        volumeIcon.addEventListener('click', () => {
+            audio.muted = !audio.muted;
+            updateVolumeIcon();
+        });
+
+        function updateVolumeIcon() {
+            if (audio.muted || audio.volume === 0) {
+                volumeIcon.textContent = '🔇';
+            } else if (audio.volume < 0.5) {
+                volumeIcon.textContent = '🔉';
+            } else {
+                volumeIcon.textContent = '🔊';
+            }
+        }
+
+        audio.volume = volumeSlider.value;
+
+        // File upload - label already triggers file input, no extra click handler needed
+
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) loadFile(file);
+        });
+
+        ['dragenter', 'dragover'].forEach(ev => {
+            uploadZone.addEventListener(ev, (e) => {
+                e.preventDefault();
+                uploadZone.classList.add('dragover');
+            });
+        });
+
+        ['dragleave', 'drop'].forEach(ev => {
+            uploadZone.addEventListener(ev, (e) => {
+                e.preventDefault();
+                uploadZone.classList.remove('dragover');
+            });
+        });
+
+        uploadZone.addEventListener('drop', (e) => {
+            const file = e.dataTransfer.files[0];
+            if (file) loadFile(file);
+        });
+
+        function loadFile(file) {
+            // Stop current playback and reset state
+            audio.pause();
+            isPlaying = false;
+            playBtn.textContent = '▶';
+            progressFill.style.width = '0%';
+            currentTimeEl.textContent = '0:00';
+            durationEl.textContent = '0:00';
+
+            // Load new file
+            const url = URL.createObjectURL(file);
+            audio.src = url;
+            audio.load();
+            trackName.textContent = file.name.replace(/\.[^/.]+$/, '');
+            trackArtist.textContent = 'Uploaded Track';
+
+            // Clear file input so same file can be selected again
+            fileInput.value = '';
+        }
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            if (e.code === 'Space') {
+                e.preventDefault();
+                playBtn.click();
+            }
+        });
     </script>
 </body>
+
 </html>
