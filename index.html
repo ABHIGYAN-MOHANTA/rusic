@@ -5,8 +5,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Rusic — Music Visualizer</title>
+    <link rel="shortcut icon" href="favicon.ico">
+    <link rel="icon" href="favicon.ico" type="image/x-icon">
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap"
         rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
     <style>
         * {
             margin: 0;
@@ -38,6 +42,59 @@
             min-height: 100vh;
             display: flex;
             flex-direction: column;
+            position: relative;
+            z-index: 1;
+        }
+
+        /* Animated Background */
+        .bg-container {
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            overflow: hidden;
+            pointer-events: none;
+        }
+
+        .bg-orb {
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(80px);
+            opacity: 0.5;
+        }
+
+        .bg-orb-1 {
+            width: 600px;
+            height: 600px;
+            background: radial-gradient(circle, rgba(99, 102, 241, 0.4) 0%, transparent 70%);
+            top: -200px;
+            left: -100px;
+        }
+
+        .bg-orb-2 {
+            width: 500px;
+            height: 500px;
+            background: radial-gradient(circle, rgba(139, 92, 246, 0.35) 0%, transparent 70%);
+            bottom: -150px;
+            right: -100px;
+        }
+
+        .bg-orb-3 {
+            width: 400px;
+            height: 400px;
+            background: radial-gradient(circle, rgba(59, 130, 246, 0.3) 0%, transparent 70%);
+            top: 40%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        .bg-grid {
+            position: absolute;
+            inset: 0;
+            background-image:
+                linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+            background-size: 60px 60px;
+            mask-image: radial-gradient(ellipse 80% 60% at 50% 50%, black 20%, transparent 100%);
         }
 
         /* Header */
@@ -53,12 +110,8 @@
         .logo {
             width: 40px;
             height: 40px;
-            background: linear-gradient(135deg, var(--accent), #a855f7);
             border-radius: 10px;
-            display: grid;
-            place-items: center;
-            font-weight: 700;
-            font-size: 1.1rem;
+            object-fit: cover;
         }
 
         .brand h1 {
@@ -85,11 +138,22 @@
         .visualizer {
             background: var(--surface);
             border-radius: 16px;
-            border: 1px solid var(--border);
+            border: 1px solid rgba(99, 102, 241, 0.15);
             overflow: hidden;
             display: flex;
             flex-direction: column;
             min-height: 400px;
+            position: relative;
+        }
+
+        .visualizer::before {
+            content: '';
+            position: absolute;
+            inset: -60px;
+            background: radial-gradient(ellipse at 50% 50%, rgba(99, 102, 241, 0.15) 0%, rgba(139, 92, 246, 0.08) 40%, transparent 70%);
+            z-index: -1;
+            filter: blur(40px);
+            pointer-events: none;
         }
 
         .canvas-container {
@@ -131,8 +195,19 @@
         .panel {
             background: var(--surface);
             border-radius: 12px;
-            border: 1px solid var(--border);
+            border: 1px solid rgba(99, 102, 241, 0.1);
             padding: 1rem;
+            position: relative;
+        }
+
+        .panel::before {
+            content: '';
+            position: absolute;
+            inset: -40px;
+            background: radial-gradient(ellipse at 50% 50%, rgba(99, 102, 241, 0.12) 0%, rgba(139, 92, 246, 0.06) 40%, transparent 70%);
+            z-index: -1;
+            filter: blur(30px);
+            pointer-events: none;
         }
 
         .panel-title {
@@ -154,12 +229,27 @@
         .album-art {
             width: 48px;
             height: 48px;
-            background: linear-gradient(135deg, var(--surface-2), var(--accent));
             border-radius: 8px;
-            display: grid;
-            place-items: center;
-            font-size: 1.25rem;
+            object-fit: cover;
             flex-shrink: 0;
+        }
+
+        .icon {
+            width: 18px;
+            height: 18px;
+            stroke: currentColor;
+            stroke-width: 2;
+            fill: none;
+        }
+
+        .btn-play .icon {
+            width: 22px;
+            height: 22px;
+        }
+
+        .volume-icon .icon {
+            width: 18px;
+            height: 18px;
         }
 
         .track-info {
@@ -388,9 +478,17 @@
 </head>
 
 <body>
+    <!-- Animated Background -->
+    <div class="bg-container">
+        <div class="bg-orb bg-orb-1"></div>
+        <div class="bg-orb bg-orb-2"></div>
+        <div class="bg-orb bg-orb-3"></div>
+        <div class="bg-grid"></div>
+    </div>
+
     <div class="app">
         <header class="header">
-            <div class="logo">R</div>
+            <img src="./logo-sq.jpg" alt="Rusic" class="logo">
             <div class="brand">
                 <h1>Rusic</h1>
                 <p>WebGL Music Visualizer • Rust + WASM</p>
@@ -409,7 +507,7 @@
                 <div class="panel">
                     <div class="panel-title">Now Playing</div>
                     <div class="now-playing">
-                        <div class="album-art">🎵</div>
+                        <img src="./logo-sq.jpg" alt="Album" class="album-art">
                         <div class="track-info">
                             <div class="track-name" id="track-name">Default Track</div>
                             <div class="track-artist" id="track-artist">Rusic Demo</div>
@@ -425,13 +523,16 @@
                     </div>
 
                     <div class="playback-controls">
-                        <button class="btn btn-icon" id="prev-btn">⏮</button>
-                        <button class="btn btn-icon btn-play" id="play-btn">▶</button>
-                        <button class="btn btn-icon" id="next-btn">⏭</button>
+                        <button class="btn btn-icon" id="prev-btn"><i data-lucide="skip-back" class="icon"></i></button>
+                        <button class="btn btn-icon btn-play" id="play-btn"><i data-lucide="play" class="icon"
+                                id="play-icon"></i></button>
+                        <button class="btn btn-icon" id="next-btn"><i data-lucide="skip-forward"
+                                class="icon"></i></button>
                     </div>
 
                     <div class="volume-row">
-                        <span class="volume-icon" id="volume-icon">🔊</span>
+                        <span class="volume-icon" id="volume-icon"><i data-lucide="volume-2" class="icon"
+                                id="volume-lucide"></i></span>
                         <input type="range" id="volume" min="0" max="1" step="0.01" value="0.8">
                     </div>
                 </div>
@@ -494,9 +595,18 @@
             console.error('WASM init failed:', err);
         });
 
+        // Initialize Lucide icons
+        lucide.createIcons();
+
         // Load default track
         audio.src = './default.mp3';
         audio.load();
+
+        // Helper to swap Lucide icons
+        function setIcon(element, iconName) {
+            element.innerHTML = `<i data-lucide="${iconName}" class="icon"></i>`;
+            lucide.createIcons({ nodes: [element] });
+        }
 
         // Format time
         function formatTime(sec) {
@@ -517,17 +627,17 @@
 
         audio.addEventListener('play', () => {
             isPlaying = true;
-            playBtn.textContent = '⏸';
+            setIcon(playBtn, 'pause');
         });
 
         audio.addEventListener('pause', () => {
             isPlaying = false;
-            playBtn.textContent = '▶';
+            setIcon(playBtn, 'play');
         });
 
         audio.addEventListener('ended', () => {
             isPlaying = false;
-            playBtn.textContent = '▶';
+            setIcon(playBtn, 'play');
             progressFill.style.width = '0%';
         });
 
@@ -562,11 +672,11 @@
 
         function updateVolumeIcon() {
             if (audio.muted || audio.volume === 0) {
-                volumeIcon.textContent = '🔇';
+                setIcon(volumeIcon, 'volume-x');
             } else if (audio.volume < 0.5) {
-                volumeIcon.textContent = '🔉';
+                setIcon(volumeIcon, 'volume-1');
             } else {
-                volumeIcon.textContent = '🔊';
+                setIcon(volumeIcon, 'volume-2');
             }
         }
 
@@ -602,7 +712,7 @@
             // Stop current playback and reset state
             audio.pause();
             isPlaying = false;
-            playBtn.textContent = '▶';
+            setIcon(playBtn, 'play');
             progressFill.style.width = '0%';
             currentTimeEl.textContent = '0:00';
             durationEl.textContent = '0:00';
@@ -624,6 +734,41 @@
                 e.preventDefault();
                 playBtn.click();
             }
+        });
+    </script>
+
+    <!-- GSAP Background Animations -->
+    <script>
+        // Animate background orbs with GSAP
+        gsap.to('.bg-orb-1', {
+            x: 100,
+            y: 80,
+            scale: 1.1,
+            duration: 8,
+            ease: 'sine.inOut',
+            repeat: -1,
+            yoyo: true
+        });
+
+        gsap.to('.bg-orb-2', {
+            x: -80,
+            y: -60,
+            scale: 0.9,
+            duration: 10,
+            ease: 'sine.inOut',
+            repeat: -1,
+            yoyo: true
+        });
+
+        gsap.to('.bg-orb-3', {
+            x: 50,
+            y: -40,
+            scale: 1.15,
+            opacity: 0.35,
+            duration: 12,
+            ease: 'sine.inOut',
+            repeat: -1,
+            yoyo: true
         });
     </script>
 </body>
