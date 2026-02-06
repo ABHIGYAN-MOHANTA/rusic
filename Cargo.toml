@@ -18,5 +18,6 @@ web-sys = { version = "0.3", features = [
     "WebGlProgram",
     "WebGlShader",
     "WebGlBuffer",
+    "WebGlUniformLocation",
     "console",
 ] }

@@ -553,7 +553,7 @@
 
     <script type="module">
         // Initialize Rust WASM module
-        import init, { render_frame, get_audio_info } from './pkg/rusic.js';
+        import init, { render_frame, update_canvas_size } from './pkg/rusic.js';
 
         const canvas = document.getElementById('canvas');
         const status = document.getElementById('status');
@@ -632,17 +632,26 @@
             const dpr = window.devicePixelRatio || 1;
             canvas.width = container.clientWidth * dpr;
             canvas.height = container.clientHeight * dpr;
+
+            // Notify Rust of size change
+            if (wasmReady) {
+                update_canvas_size(canvas.width, canvas.height);
+            }
         }
 
         window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
         resizeCanvas();
 
         // Initialize WASM
         init().then(() => {
             wasmReady = true;
-            status.textContent = 'WebGL Ready (WASM)';
+            status.textContent = 'Visualizer Ready';
             status.classList.add('active');
             console.log('✅ Rusic WASM initialized successfully');
+
+            // Ensure canvas size is set
+            resizeCanvas();
 
             // Start animation loop
             animationLoop();

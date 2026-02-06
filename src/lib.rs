@@ -1,143 +1,239 @@
+use std::cell::RefCell;
 use wasm_bindgen::prelude::*;
-use web_sys::{WebGl2RenderingContext, WebGlProgram, WebGlShader, console};
+use web_sys::{WebGl2RenderingContext, WebGlProgram, WebGlShader, WebGlBuffer, WebGlUniformLocation};
 
-// Store the WebGL context globally for render_frame to use
-static mut GL_CONTEXT: Option<WebGl2RenderingContext> = None;
-static mut PROGRAM: Option<WebGlProgram> = None;
+// Number of bars - use full resolution
+const NUM_BARS: usize = 128;
+
+// Store WebGL state
+thread_local! {
+    static STATE: RefCell<Option<VisualizerState>> = RefCell::new(None);
+}
+
+struct VisualizerState {
+    gl: WebGl2RenderingContext,
+    program: WebGlProgram,
+    vertex_buffer: WebGlBuffer,
+    resolution_loc: WebGlUniformLocation,
+    canvas_width: f32,
+    canvas_height: f32,
+}
 
 #[wasm_bindgen(start)]
 pub fn start() -> Result<(), JsValue> {
-    // Access the document and canvas
-    let window = web_sys::window().ok_or("No global window found")?;
-    let document = window.document().ok_or("No document found")?;
+    let window = web_sys::window().ok_or("No window")?;
+    let document = window.document().ok_or("No document")?;
     let canvas = document
         .get_element_by_id("canvas")
-        .ok_or("No canvas found")?
+        .ok_or("No canvas")?
         .dyn_into::<web_sys::HtmlCanvasElement>()?;
     
-    // Get the WebGL rendering context
     let gl = canvas
         .get_context("webgl2")?
-        .ok_or("Failed to get WebGL2 context")?
+        .ok_or("No WebGL2")?
         .dyn_into::<WebGl2RenderingContext>()?;
     
-    // Initialize shaders
-    let vertex_shader = compile_shader(
-        &gl,
-        WebGl2RenderingContext::VERTEX_SHADER,
-        r#"
-        attribute vec4 position;
+    // Vertex shader
+    let vert_src = r#"#version 300 es
+        precision highp float;
+        
+        in vec2 a_position;
+        in float a_value;
+        in float a_index;
+        
+        uniform vec2 u_resolution;
+        
+        out float v_value;
+        out float v_index;
+        out vec2 v_pos;
+        
         void main() {
-            gl_Position = position;
+            v_value = a_value;
+            v_index = a_index;
+            v_pos = a_position;
+            
+            vec2 clipSpace = (a_position / u_resolution) * 2.0 - 1.0;
+            gl_Position = vec4(clipSpace * vec2(1, -1), 0, 1);
         }
-        "#,
-    )?;
-    let fragment_shader = compile_shader(
-        &gl,
-        WebGl2RenderingContext::FRAGMENT_SHADER,
-        r#"
-        precision mediump float;
+    "#;
+    
+    // Fragment shader - Neon pill bars
+    let frag_src = r#"#version 300 es
+        precision highp float;
+        
+        in float v_value;
+        in float v_index;
+        in vec2 v_pos;
+        
+        out vec4 fragColor;
+        
         void main() {
-            gl_FragColor = vec4(0.0, 1.0, 0.0, 1.0);
+            // Gradient: Cyan -> Indigo -> Pink
+            vec3 c1 = vec3(0.0, 0.84, 1.0);    // Cyan #00d7ff
+            vec3 c2 = vec3(0.39, 0.4, 0.95);   // Indigo #6366f1
+            vec3 c3 = vec3(1.0, 0.18, 0.58);   // Pink #ff2d95
+            
+            // Interpolate color based on bar index (left to right)
+            float t = v_index / 128.0;
+            vec3 color = mix(c1, c2, smoothstep(0.0, 0.5, t));
+            color = mix(color, c3, smoothstep(0.5, 1.0, t));
+            
+            // Add glow intensity based on volume
+            float glow = 0.5 + v_value * 0.5;
+            color *= glow; // Bloom effect
+            
+            // Vertical fade for softness at tips
+            // Assuming bars are centered at Y, we can cheat by just using solid color
+            // as the shape is defined by geometry.
+            
+            // Slight transparency for glass feel
+            float alpha = 0.9 + v_value * 0.1;
+            
+            fragColor = vec4(color, alpha);
         }
-        "#,
-    )?;
-    let program = link_program(&gl, &vertex_shader, &fragment_shader)?;
+    "#;
+    
+    let vert_shader = compile_shader(&gl, WebGl2RenderingContext::VERTEX_SHADER, vert_src)?;
+    let frag_shader = compile_shader(&gl, WebGl2RenderingContext::FRAGMENT_SHADER, frag_src)?;
+    let program = link_program(&gl, &vert_shader, &frag_shader)?;
+    
     gl.use_program(Some(&program));
     
-    // Set up the vertices
-    let vertices: [f32; 6] = [
-        0.0,  0.5,  // Top vertex
-       -0.5, -0.5,  // Bottom left vertex
-        0.5, -0.5,  // Bottom right vertex
-    ];
-    let buffer = gl.create_buffer().ok_or("Failed to create buffer")?;
-    gl.bind_buffer(WebGl2RenderingContext::ARRAY_BUFFER, Some(&buffer));
-    unsafe {
-        let vertices_array = js_sys::Float32Array::view(&vertices);
-        gl.buffer_data_with_array_buffer_view(
-            WebGl2RenderingContext::ARRAY_BUFFER,
-            &vertices_array,
-            WebGl2RenderingContext::STATIC_DRAW,
-        );
-    }
+    let resolution_loc = gl.get_uniform_location(&program, "u_resolution")
+        .ok_or("No resolution uniform")?;
     
-    // Link the position attribute in the vertex shader
-    let position = gl.get_attrib_location(&program, "position") as u32;
-    gl.vertex_attrib_pointer_with_i32(position, 2, WebGl2RenderingContext::FLOAT, false, 0, 0);
-    gl.enable_vertex_attrib_array(position);
+    let vertex_buffer = gl.create_buffer().ok_or("Failed to create buffer")?;
     
-    // Store GL context and program globally for render_frame
-    unsafe {
-        GL_CONTEXT = Some(gl.clone());
-        PROGRAM = Some(program);
-    }
+    let pos_loc = gl.get_attrib_location(&program, "a_position") as u32;
+    let val_loc = gl.get_attrib_location(&program, "a_value") as u32;
+    let idx_loc = gl.get_attrib_location(&program, "a_index") as u32;
     
-    // Initial draw
-    gl.clear_color(0.0, 0.0, 0.0, 1.0);
-    gl.clear(WebGl2RenderingContext::COLOR_BUFFER_BIT);
-    gl.draw_arrays(WebGl2RenderingContext::TRIANGLES, 0, 3);
+    gl.bind_buffer(WebGl2RenderingContext::ARRAY_BUFFER, Some(&vertex_buffer));
+    
+    let stride = 4 * 4;
+    gl.vertex_attrib_pointer_with_i32(pos_loc, 2, WebGl2RenderingContext::FLOAT, false, stride, 0);
+    gl.vertex_attrib_pointer_with_i32(val_loc, 1, WebGl2RenderingContext::FLOAT, false, stride, 8);
+    gl.vertex_attrib_pointer_with_i32(idx_loc, 1, WebGl2RenderingContext::FLOAT, false, stride, 12);
+    
+    gl.enable_vertex_attrib_array(pos_loc);
+    gl.enable_vertex_attrib_array(val_loc);
+    gl.enable_vertex_attrib_array(idx_loc);
+    
+    gl.enable(WebGl2RenderingContext::BLEND);
+    gl.blend_func(WebGl2RenderingContext::SRC_ALPHA, WebGl2RenderingContext::ONE_MINUS_SRC_ALPHA);
+    
+    let width = canvas.width() as f32;
+    let height = canvas.height() as f32;
+    
+    STATE.with(|s| {
+        *s.borrow_mut() = Some(VisualizerState {
+            gl,
+            program,
+            vertex_buffer,
+            resolution_loc,
+            canvas_width: width,
+            canvas_height: height,
+        });
+    });
     
     Ok(())
 }
 
-/// Called every animation frame with audio frequency data
-/// frequency_data: Uint8Array of 128 values (0-255) representing frequency bins from bass to treble
-/// time_data: Uint8Array of 128 values (0-255) representing waveform data
 #[wasm_bindgen]
-pub fn render_frame(frequency_data: &[u8], time_data: &[u8]) {
-    // Log audio data info (you can remove this once you start building your visualizer)
-    let freq_len = frequency_data.len();
-    let time_len = time_data.len();
-    
-    // Calculate some useful metrics from the frequency data
-    let bass_avg: u32 = frequency_data[0..16].iter().map(|&x| x as u32).sum::<u32>() / 16;
-    let mid_avg: u32 = frequency_data[16..64].iter().map(|&x| x as u32).sum::<u32>() / 48;
-    let treble_avg: u32 = frequency_data[64..128].iter().map(|&x| x as u32).sum::<u32>() / 64;
-    let overall_avg: u32 = frequency_data.iter().map(|&x| x as u32).sum::<u32>() / freq_len as u32;
-    
-    // Log every ~60 frames to avoid spam (check if bass_avg changed significantly)
-    static mut LAST_LOG: u32 = 0;
-    static mut FRAME_COUNT: u32 = 0;
-    unsafe {
-        FRAME_COUNT += 1;
-        if FRAME_COUNT % 30 == 0 {
-            console::log_1(&format!(
-                "🎵 Audio Data | Freq bins: {} | Time bins: {} | Bass: {} | Mid: {} | Treble: {} | Overall: {}",
-                freq_len, time_len, bass_avg, mid_avg, treble_avg, overall_avg
-            ).into());
+pub fn render_frame(frequency_data: &[u8], _time_data: &[u8]) {
+    STATE.with(|s| {
+        let mut state_ref = s.borrow_mut();
+        if let Some(state) = state_ref.as_mut() {
+            render_linear_visualizer(state, frequency_data);
         }
+    });
+}
+
+#[wasm_bindgen]
+pub fn update_canvas_size(width: f32, height: f32) {
+    STATE.with(|s| {
+        if let Some(state) = s.borrow_mut().as_mut() {
+            state.canvas_width = width;
+            state.canvas_height = height;
+            state.gl.viewport(0, 0, width as i32, height as i32);
+        }
+    });
+}
+
+fn render_linear_visualizer(state: &mut VisualizerState, frequency_data: &[u8]) {
+    let gl = &state.gl;
+    
+    // Clear
+    gl.clear_color(0.0, 0.0, 0.0, 0.0);
+    gl.clear(WebGl2RenderingContext::COLOR_BUFFER_BIT);
+    
+    // Set uniforms
+    gl.uniform2f(Some(&state.resolution_loc), state.canvas_width, state.canvas_height);
+    
+    let cy = state.canvas_height / 2.0;
+    
+    // We want the spectrum to span the width, with some padding
+    let padding_x = state.canvas_width * 0.05;
+    let total_width = state.canvas_width - (2.0 * padding_x);
+    let bar_spacing = total_width / NUM_BARS as f32;
+    let bar_width = bar_spacing * 0.7; // 70% bar, 30% gap
+    
+    let max_height = state.canvas_height * 0.35; // Leave some room
+    
+    let mut vertices: Vec<f32> = Vec::with_capacity(NUM_BARS * 6 * 4);
+    
+    for i in 0..NUM_BARS {
+        // Frequency mapping
+        // We often want to skip the very first few low bins as they can be DC offset or hum
+        // and maybe limit the top end.
+        // But for simplicity, let's just map 1:1 if we count 128 bins.
+        let freq_idx = i.min(frequency_data.len() - 1);
+        let value = frequency_data[freq_idx] as f32 / 255.0;
+        
+        let smoothed_value = value.powf(0.85); // Gamma correction
+        
+        // Calculate X position
+        let x_center = padding_x + (i as f32 * bar_spacing) + (bar_spacing / 2.0);
+        
+        // Bar half-height (mirrored)
+        let h = 4.0 + (smoothed_value * max_height); // Minimum 4px height
+        
+        // Coordinates for a centered rounded rect (simulated by simple rect)
+        let x1 = x_center - bar_width / 2.0;
+        let x2 = x_center + bar_width / 2.0;
+        let y_top = cy - h;
+        let y_bottom = cy + h;
+        
+        let idx = i as f32;
+        
+        // Triangle 1
+        vertices.extend_from_slice(&[x1, y_top, smoothed_value, idx]);
+        vertices.extend_from_slice(&[x2, y_top, smoothed_value, idx]);
+        vertices.extend_from_slice(&[x1, y_bottom, smoothed_value, idx]);
+        
+        // Triangle 2
+        vertices.extend_from_slice(&[x2, y_top, smoothed_value, idx]);
+        vertices.extend_from_slice(&[x2, y_bottom, smoothed_value, idx]);
+        vertices.extend_from_slice(&[x1, y_bottom, smoothed_value, idx]);
     }
     
-    // TODO: Your WebGL visualization code goes here!
-    // You have access to:
-    // - frequency_data: 128 frequency bins (0-255), index 0 = bass, index 127 = treble
-    // - time_data: 128 waveform samples (0-255), centered at 128
-    // - bass_avg, mid_avg, treble_avg, overall_avg: pre-calculated averages
-    //
-    // Example: Use bass_avg to pulse the size of shapes, treble_avg for color intensity, etc.
-}
-
-/// Get audio analysis info as a string (for debugging in JS console)
-#[wasm_bindgen]
-pub fn get_audio_info(frequency_data: &[u8]) -> String {
-    let bass: u32 = frequency_data[0..16].iter().map(|&x| x as u32).sum::<u32>() / 16;
-    let mid: u32 = frequency_data[16..64].iter().map(|&x| x as u32).sum::<u32>() / 48;
-    let treble: u32 = frequency_data[64..128].iter().map(|&x| x as u32).sum::<u32>() / 64;
+    unsafe {
+        let vert_array = js_sys::Float32Array::view(&vertices);
+        gl.buffer_data_with_array_buffer_view(
+            WebGl2RenderingContext::ARRAY_BUFFER,
+            &vert_array,
+            WebGl2RenderingContext::DYNAMIC_DRAW,
+        );
+    }
     
-    format!("Bass: {} | Mid: {} | Treble: {}", bass, mid, treble)
+    gl.draw_arrays(WebGl2RenderingContext::TRIANGLES, 0, (NUM_BARS * 6) as i32);
 }
 
-fn compile_shader(
-    gl: &WebGl2RenderingContext,
-    shader_type: u32,
-    source: &str,
-) -> Result<WebGlShader, String> {
-    let shader = gl
-        .create_shader(shader_type)
-        .ok_or("Unable to create shader object")?;
+fn compile_shader(gl: &WebGl2RenderingContext, shader_type: u32, source: &str) -> Result<WebGlShader, String> {
+    let shader = gl.create_shader(shader_type).ok_or("Cannot create shader")?;
     gl.shader_source(&shader, source);
     gl.compile_shader(&shader);
+    
     if gl.get_shader_parameter(&shader, WebGl2RenderingContext::COMPILE_STATUS)
         .as_bool()
         .unwrap_or(false)
@@ -148,17 +244,12 @@ fn compile_shader(
     }
 }
 
-fn link_program(
-    gl: &WebGl2RenderingContext,
-    vertex_shader: &WebGlShader,
-    fragment_shader: &WebGlShader,
-) -> Result<WebGlProgram, String> {
-    let program = gl
-        .create_program()
-        .ok_or("Unable to create shader program")?;
-    gl.attach_shader(&program, vertex_shader);
-    gl.attach_shader(&program, fragment_shader);
+fn link_program(gl: &WebGl2RenderingContext, vert: &WebGlShader, frag: &WebGlShader) -> Result<WebGlProgram, String> {
+    let program = gl.create_program().ok_or("Cannot create program")?;
+    gl.attach_shader(&program, vert);
+    gl.attach_shader(&program, frag);
     gl.link_program(&program);
+    
     if gl.get_program_parameter(&program, WebGl2RenderingContext::LINK_STATUS)
         .as_bool()
         .unwrap_or(false)
