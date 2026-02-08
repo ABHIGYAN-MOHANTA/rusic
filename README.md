@@ -1,4 +1,4 @@
-# 🎵 Rusic - Music Visualizer - Rust + WASM + Webgl2
+# 🎵 Rusic - WebGL Music Visualizer • Rust + WASM
 
 **Rusic** is a high-performance WebGL music visualizer built with **Rust + WebAssembly** and driven by the **Web Audio API**.  
 It renders a neon, mirrored frequency spectrum in real time using **WebGL 2.0**, compiled to the web via `wasm-pack`.
