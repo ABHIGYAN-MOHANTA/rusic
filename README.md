@@ -2,6 +2,7 @@
 
 **Rusic** is a high-performance WebGL music visualizer built with **Rust + WebAssembly** and driven by the **Web Audio API**.  
 It renders a neon, mirrored frequency spectrum in real time using **WebGL 2.0**, compiled to the web via `wasm-pack`.
+<img width="1512" height="982" alt="Screenshot 2026-02-08 at 1 40 48 PM" src="https://github.com/user-attachments/assets/1e99a835-d42f-4cc2-ae4b-30864b64cf7e" />
 
 > Rust handles the rendering pipeline.  
 > JavaScript handles audio analysis and UI.  
